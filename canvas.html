@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Canvas</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #fafaf7; --ink: #1d1d1f; --muted: #6b6b70;
+    --line: #e4e4df; --accent: #2f6fed; --accent-soft: #e8f0ff;
+    --green: #1f9d55; --amber: #d98e04; --red: #d64545; --violet: #7a4fd6;
+    --teal: #0e8a8a; --gray: #8a8a90;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink);
+         background: var(--bg); display: flex; flex-direction: column; overflow: hidden; }
+  input, textarea, select, button { font-family: inherit; color: inherit; }
+  a { color: var(--accent); }
+  code { font-family: var(--mono); font-size: 12px; background: #f2f2ee; padding: 1px 5px; border-radius: 4px; }
+
+  /* Top bar */
+  .topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+            background: #fff; flex-wrap: wrap; z-index: 20; }
+  .topbar .brand { font-weight: 700; margin-right: 6px; }
+  .topbar .back { font-size: 13px; text-decoration: none; color: var(--muted); }
+  .topbar .sep { width: 1px; height: 22px; background: var(--line); }
+  .topbar .spacer { flex: 1; }
+  .btn { background: #fff; border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .btn:hover { border-color: #cfcfc8; background: #f7f7f4; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #2560d6; }
+  select.btn { padding: 6px 8px; }
+  .zoom { font-size: 12px; color: var(--muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+
+  .app { flex: 1; display: flex; min-height: 0; position: relative; }
+
+  /* Canvas */
+  #viewport { flex: 1; position: relative; overflow: hidden; background-color: #fff;
+              background-image: radial-gradient(#dcdcd6 1px, transparent 1px); background-size: 22px 22px;
+              touch-action: none; cursor: grab; }
+  #viewport.panning { cursor: grabbing; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+  #edges path { fill: none; stroke: #c9c9c2; stroke-width: 2; }
+  #edges path.first { stroke: var(--ink); stroke-dasharray: 6 5; }
+  #edges text { font-size: 12px; fill: var(--muted); }
+
+  .card { position: absolute; width: 340px; background: #fff; border: 1px solid var(--line); border-top: 4px solid var(--c);
+          border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06); cursor: default; }
+  .card.lifted { box-shadow: 0 2px 4px rgba(0,0,0,.06), 0 18px 40px rgba(0,0,0,.14); }
+  .card-head { display: flex; align-items: center; gap: 4px; padding: 7px 8px 7px 10px; cursor: grab; border-bottom: 1px solid var(--line); }
+  .grip { color: #c4c4be; font-size: 13px; user-select: none; }
+  .card-title { font-weight: 700; font-size: 15px; flex: 1; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #f0f0ec; color: var(--muted); }
+  .hash { color: var(--c); font: 600 13px var(--mono); margin-left: 2px; }
+  .order { font: 600 11px var(--mono); color: var(--muted); }
+  .heading { flex: 1; min-width: 0; border: 0; font-size: 15px; font-weight: 600; padding: 4px; border-radius: 6px; background: transparent; }
+  .heading:focus { background: #f4f4f0; outline: none; }
+  .kind { font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 1px 2px; background: #fff; color: var(--c); font-weight: 600; margin-right: 2px; }
+  .icon { background: transparent; color: var(--muted); border: 0; padding: 2px 6px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .icon:hover:not(:disabled) { background: #f0f0ec; color: var(--ink); }
+  .icon:disabled { opacity: .3; cursor: default; }
+  .warn-dot { display: none; width: 18px; height: 18px; border-radius: 50%; background: #fff4e0; color: var(--amber);
+              font: 700 12px/18px var(--mono); text-align: center; cursor: help; }
+  .card.has-warn .warn-dot { display: inline-block; }
+  .hint { font-size: 12px; color: var(--muted); padding: 7px 12px 0; line-height: 1.45; }
+
+  .items { padding: 8px 8px 4px; min-height: 44px; border-radius: 8px; }
+  .items.drop-end { background: var(--accent-soft); }
+  .empty { font-size: 12px; color: var(--muted); padding: 10px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+  .item { display: flex; align-items: flex-start; gap: 4px; padding: 2px; border-radius: 8px; }
+  .item:hover { background: #f8f8f5; }
+  .item.dragging { opacity: .35; }
+  .item.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+  .item.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
+  .igrip { cursor: grab; color: #c4c4be; font-size: 12px; padding-top: 7px; user-select: none; width: 12px; letter-spacing: -3px; }
+  .badge { flex: 0 0 auto; min-width: 30px; height: 26px; margin-top: 2px; border-radius: 6px; border: 0;
+           background: color-mix(in srgb, var(--c) 12%, white); color: var(--c); font: 600 12px var(--mono); cursor: pointer; padding: 0 5px; }
+  .badge:hover { background: color-mix(in srgb, var(--c) 22%, white); }
+  .itext { flex: 1; min-width: 0; border: 0; background: transparent; resize: none; font-size: 14px; line-height: 1.45;
+           padding: 4px 6px; border-radius: 6px; overflow: hidden; }
+  .itext:focus { outline: 2px solid var(--accent-soft); background: #fff; }
+  .itext.mono { font: 12.5px/1.45 var(--mono); background: #f6f6f2; overflow-x: auto; overflow-y: hidden; }
+  .t-subheading .itext { font-weight: 700; }
+  .idel { opacity: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 14px; }
+  .item:hover .idel, .item:focus-within .idel { opacity: 1; }
+  .idel:hover { color: var(--red); background: #fdeeee; }
+  .add-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 10px; }
+  .add { background: transparent; border: 1px dashed #d6d6cf; color: var(--muted); font-size: 12px; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+  .add:hover { border-color: var(--c); color: var(--c); }
+
+  /* Trigger card */
+  .trigger .body { padding: 4px 12px 12px; }
+  .flabel { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; }
+  .count { font-weight: 400; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--red); font-weight: 600; }
+  .field { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 14px; line-height: 1.45; resize: none; overflow: hidden; background: #fff; }
+  .field:focus { outline: 2px solid var(--accent-soft); border-color: #b9cdf7; }
+  .field.mono { font: 13px/1.45 var(--mono); }
+  details { margin-top: 10px; font-size: 13px; }
+  summary { cursor: pointer; color: var(--muted); }
+  details .field { margin-top: 6px; }
+  .files { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .files code { margin-right: 4px; }
+
+  .checks { list-style: none; padding: 0; margin: 10px 0 0; font-size: 12.5px; }
+  .checks li { padding: 3px 0 3px 20px; position: relative; line-height: 1.4; }
+  .checks li::before { position: absolute; left: 0; font-weight: 700; }
+  .checks .ok::before { content: "✓"; color: var(--green); }
+  .checks .bad::before { content: "✕"; color: var(--red); }
+  .checks .warn::before { content: "!"; color: var(--amber); left: 4px; }
+  .checks .tip::before { content: "i"; color: var(--accent); left: 4px; font-family: Georgia, serif; font-style: italic; }
+  .checks li[data-where] { cursor: pointer; }
+  .checks li[data-where]:hover { text-decoration: underline; }
+
+  /* Side panel */
+  #panel { width: 400px; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  #panel.hidden { display: none; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .panel-body { padding: 14px 16px 24px; overflow: auto; flex: 1; }
+  .panel-body h4 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .panel-body .path { font-size: 13px; margin: 0 0 10px; word-break: break-all; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  #md { background: #1d1d1f; color: #f5f5f5; padding: 12px; border-radius: 8px; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .stats { font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .tips { font-size: 12px; color: var(--muted); line-height: 1.6; padding-left: 18px; }
+
+  /* Import dialog */
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(720px, calc(100vw - 32px)); box-shadow: 0 24px 60px rgba(0,0,0,.2); }
+  dialog::backdrop { background: rgba(20,20,20,.35); }
+  .dlg { padding: 18px 20px; }
+  .dlg h3 { margin: 0 0 4px; }
+  .dlg textarea { width: 100%; min-height: 260px; font: 12.5px/1.45 var(--mono); padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; }
+  .dlg .row { display: flex; gap: 8px; margin-top: 10px; }
+  .dlg .row input { flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+  .dlg .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .muted { color: var(--muted); font-size: 13px; }
+
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 14px;
+           border-radius: 10px; font-size: 13px; display: none; align-items: center; gap: 12px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  #toast button { background: transparent; border: 0; color: #9cbcff; cursor: pointer; font-weight: 600; font-size: 13px; }
+
+  @media (max-width: 860px) {
+    #panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(400px, 100%); z-index: 15; box-shadow: -10px 0 30px rgba(0,0,0,.12); }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a class="back" href="index.html">← Skill Lab</a>
+  <span class="brand">Skill Canvas</span>
+  <span class="sep"></span>
+  <button class="btn" onclick="openImport()">Import SKILL.md…</button>
+  <button class="btn" onclick="loadSource(TEMPLATE, 'Started a blank skill')">New blank</button>
+  <button class="btn hide-sm" onclick="loadSource(EXAMPLE, 'Loaded the example')">Example</button>
+  <select class="btn" id="add-section" aria-label="Add a section"></select>
+  <button class="btn" onclick="tidy(); fit();" title="Arrange cards in reading order">Tidy up</button>
+  <button class="btn" onclick="undo()" title="Undo (⌘/Ctrl+Z)">Undo</button>
+  <span class="spacer"></span>
+  <button class="btn" onclick="zoomBy(1/1.2)" aria-label="Zoom out">−</button>
+  <span class="zoom" id="zoom">100%</span>
+  <button class="btn" onclick="zoomBy(1.2)" aria-label="Zoom in">+</button>
+  <button class="btn" onclick="fit()">Fit</button>
+  <button class="btn primary" onclick="togglePanel()">SKILL.md</button>
+</div>
+
+<div class="app">
+  <div id="viewport">
+    <div id="world"><svg id="edges"></svg></div>
+  </div>
+  <aside id="panel">
+    <div class="panel-head">
+      <strong>Your new skill</strong>
+      <button class="icon" onclick="togglePanel()" aria-label="Close panel">✕</button>
+    </div>
+    <div class="panel-body">
+      <p class="path">Save as <code id="out-path"></code></p>
+      <div class="btns">
+        <button class="btn primary" onclick="download()">Download SKILL.md</button>
+        <button class="btn" onclick="copyText(toMarkdown(), 'Copied SKILL.md')">Copy</button>
+        <button class="btn" onclick="copyText(installCmd(), 'Copied install command')" title="A shell command that creates the folder and file">Copy install command</button>
+      </div>
+      <h4>Checks</h4>
+      <ul class="checks" id="checks"></ul>
+      <h4>Preview <span class="stats" id="stats"></span></h4>
+      <pre id="md"></pre>
+      <h4>How to use the canvas</h4>
+      <ul class="tips">
+        <li>Drag a card by its header. Drag the empty canvas to pan.</li>
+        <li>Drag a block by <b>⋮⋮</b> to reorder it or move it to another card.</li>
+        <li>Click a block's badge to change its type (step, bullet, text, code, table, sub-heading).</li>
+        <li>⌘/Ctrl+Enter in a block adds a new one below.</li>
+        <li>⌘/Ctrl+scroll to zoom. The arrows show the order sections appear in the file.</li>
+        <li>Your map is saved in this browser automatically.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<dialog id="import">
+  <div class="dlg">
+    <h3>Import a skill</h3>
+    <p class="muted" style="margin:0">Paste a SKILL.md, or load one from a GitHub link. It is broken into cards you can edit. Nothing is uploaded.</p>
+    <div class="row">
+      <input id="imp-url" placeholder="https://github.com/owner/repo/blob/main/skills/x/SKILL.md">
+      <button class="btn" onclick="importUrl()">Load</button>
+    </div>
+    <p id="imp-msg" class="muted" style="margin:6px 0 0"></p>
+    <textarea id="imp-text" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: …&#10;---&#10;&#10;# My skill&#10;…"></textarea>
+    <div class="foot">
+      <button class="btn" onclick="document.getElementById('import').close()">Cancel</button>
+      <button class="btn primary" onclick="importText()">Build the map</button>
+    </div>
+  </div>
+</dialog>
+
+<div id="toast"><span id="toast-msg"></span><button id="toast-undo">Undo</button></div>
+
+<script>
+/* ---------- Content ---------- */
+const EXAMPLE = `---
+name: meeting-action-items
+description: Turns meeting notes into a table of decisions, owners and due dates. Use when the user pastes meeting notes or asks for action items, follow-ups or a recap.
+---
+
+# Meeting action items
+
+Turn raw notes into something the team can act on today.
+
+## Steps
+
+1. Read the notes once and list every decision, in past tense.
+2. For each action, find the owner, the task and the due date.
+3. Convert relative dates ("next Friday") to exact dates using today's date.
+4. Fill in the output table.
+
+## Rules
+
+- Never invent an owner. Use "UNASSIGNED".
+- Never invent a date. Use "NONE".
+- Start every task with a verb.
+
+## Output format
+
+| # | Owner | Task | Due |
+|---|-------|------|-----|
+
+## Example
+
+\`\`\`text
+Input:  Sam will send the deck by Friday.
+Output: | 1 | Sam | Send the deck | 2026-10-23 |
+\`\`\`
+`;
+
+const TEMPLATE = `---
+name: my-new-skill
+description: Does X for Y. Use when the user asks for ...
+---
+
+# My new skill
+
+One sentence on the goal of this skill.
+
+## When to use
+
+- The user asks for ...
+
+## Steps
+
+1. First action.
+2. Second action.
+
+## Rules
+
+- A rule the agent must always follow.
+
+## Output format
+
+Describe or show the exact shape of the result.
+
+## Examples
+
+\`\`\`text
+Input:  ...
+Output: ...
+\`\`\`
+`;
+
+const KINDS = {
+  intro:     { label: "Title & overview", color: "var(--ink)",    hint: "The H1 title and a sentence on the goal. Loaded together with the rest of the body." },
+  context:   { label: "When to use",      color: "var(--teal)",   hint: "When and why this applies. Note: only the description decides when the skill loads." },
+  steps:     { label: "Steps",            color: "var(--accent)", hint: "What the agent does, in order. One action per step." },
+  rules:     { label: "Rules",            color: "var(--red)",    hint: "Hard limits. Keep them short and testable. Skip vague ones like \"be helpful\"." },
+  output:    { label: "Output format",    color: "var(--green)",  hint: "The exact shape of the result: a template, table or schema." },
+  example:   { label: "Examples",         color: "var(--violet)", hint: "One concrete input and output often beats a paragraph of rules." },
+  reference: { label: "References",       color: "var(--amber)",  hint: "Point to files in references/ or scripts/. They load only when a step needs them." },
+  notes:     { label: "Notes",            color: "var(--gray)",   hint: "Anything else the agent should know." },
+};
+const STARTER = {
+  context: ["bullet", "The user asks for …"], steps: ["step", "Do the first thing."], rules: ["bullet", "Never …"],
+  output: ["code", "…"], example: ["code", "Input:  …\nOutput: …"], reference: ["bullet", "For details on X, read references/x.md."], notes: ["text", ""],
+};
+const ITEM_TYPES = ["step", "bullet", "text", "code", "table", "subheading"];
+const ITEM_BADGE = { step: "#", bullet: "•", text: "¶", code: "</>", table: "▦", subheading: "H" };
+const ITEM_PLACEHOLDER = { step: "An action, verb first…", bullet: "A point…", text: "A paragraph…", code: "Code, a template or sample output…", table: "| a | b |\n|---|---|", subheading: "Sub-heading" };
+const SPEC_FIELDS = ["license", "compatibility", "metadata", "allowed-tools"];
+const STORE_KEY = "skill-canvas-v1";
+
+/* ---------- Helpers ---------- */
+const $ = id => document.getElementById(id);
+const uid = () => "i" + Math.random().toString(36).slice(2, 10);
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "text") el.textContent = v;
+    else if (k === "class") el.className = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k === "value") el.value = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  kids.flat().forEach(c => c != null && el.append(c));
+  return el;
+}
+function autosize(ta) {
+  ta.style.height = "auto";
+  if (!ta.scrollHeight) return;
+  const extra = ta.scrollWidth > ta.clientWidth ? 14 : 2;
+  ta.style.height = ta.scrollHeight + extra + "px";
+}
+
+/* ---------- Parse SKILL.md into a map ---------- */
+function unquote(v) {
+  v = v.trim();
+  if (/^"[\s\S]*"$/.test(v)) { try { return JSON.parse(v); } catch (_) { return v.slice(1, -1); } }
+  if (/^'[\s\S]*'$/.test(v)) return v.slice(1, -1).replace(/''/g, "'");
+  return v.replace(/\s+#.*$/, "");
+}
+function fold(lines) {
+  let out = "", prevBlank = true;
+  lines.forEach(l => {
+    if (!l.trim()) { out += "\n"; prevBlank = true; }
+    else { out += (prevBlank ? "" : " ") + l.trim(); prevBlank = false; }
+  });
+  return out.trim();
+}
+function parseFrontmatter(src) {
+  const m = src.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(\n|$)/);
+  if (!m) return { fm: {}, extra: "", body: src };
+  const lines = m[1].split("\n"), fm = {}, extra = [];
+  for (let i = 0; i < lines.length; i++) {
+    const kv = lines[i].match(/^([A-Za-z0-9_-]+):[ \t]*(.*)$/);
+    if (!kv) { extra.push(lines[i]); continue; }
+    const key = kv[1], val = kv[2], raw = [lines[i]], cont = [];
+    let j = i + 1;
+    while (j < lines.length && (/^\s/.test(lines[j]) || lines[j] === "")) { cont.push(lines[j]); raw.push(lines[j]); j++; }
+    i = j - 1;
+    let value;
+    const block = val.match(/^([>|])[+-]?\d*\s*(#.*)?$/);
+    const filled = cont.filter(l => l.trim());
+    if (block) {
+      const ind = filled.length ? Math.min(...filled.map(l => l.match(/^\s*/)[0].length)) : 0;
+      const ls = cont.map(l => l.slice(ind));
+      value = block[1] === "|" ? ls.join("\n").replace(/\s+$/, "") : fold(ls);
+    } else if (filled.length) {
+      // Nested map or list (e.g. metadata:) stays raw; otherwise a plain scalar folded over lines.
+      value = !val.trim() && /^\s*([\w-]+:|-\s)/.test(filled[0]) ? null : unquote([val, ...filled.map(l => l.trim())].join(" "));
+    } else value = unquote(val);
+    if ((key === "name" || key === "description") && value != null) fm[key] = value;
+    else extra.push(...raw);
+  }
+  while (extra.length && !extra[extra.length - 1].trim()) extra.pop();
+  return { fm, extra: extra.join("\n"), body: src.slice(m[0].length) };
+}
+
+function guessKind(heading) {
+  const t = (heading || "").toLowerCase();
+  if (/example|sample|demo/.test(t)) return "example";
+  if (/output|format|template|deliverable|response/.test(t)) return "output";
+  if (/rule|guideline|constraint|don'?t|never|avoid|pitfall|gotcha|principle|must/.test(t)) return "rules";
+  if (/reference|resource|file|script|see also|asset/.test(t)) return "reference";
+  if (/when|trigger|use case|purpose|overview|context|about/.test(t)) return "context";
+  if (/step|workflow|process|procedure|how to|instruction|usage|quick ?start/.test(t)) return "steps";
+  return "notes";
+}
+
+function parseBody(body) {
+  const L = body.replace(/\t/g, "    ").split("\n");
+  const intro = { id: uid(), kind: "intro", heading: "", items: [] };
+  const sections = [intro];
+  let cur = intro, title = "", i = 0;
+  const HEAD = /^ {0,3}(#{1,6})\s+(.*?)(\s+#+)?\s*$/;
+  const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+  const LIST = /^( ?)(\d{1,9}[.)]|[-*+])(\s+)(.*)$/;
+  const TABLE = /^ {0,3}\|/;
+  const startsBlock = l => HEAD.test(l) || FENCE.test(l) || LIST.test(l) || TABLE.test(l);
+  const indent = l => l.match(/^ */)[0].length;
+  const dedent = (l, n) => { let k = 0; while (k < n && l[k] === " ") k++; return l.slice(k); };
+  const push = (type, text, more) => cur.items.push({ id: uid(), type, text, ...more });
+
+  while (i < L.length) {
+    const l = L[i];
+    let m;
+    if (!l.trim()) { i++; continue; }
+    if ((m = l.match(HEAD))) {
+      const lvl = m[1].length, text = m[2];
+      if (lvl === 1 && !title && sections.length === 1 && !intro.items.length) title = text;
+      else if (lvl <= 2) { cur = { id: uid(), kind: guessKind(text), heading: text, items: [] }; sections.push(cur); }
+      else push("subheading", text, { level: lvl });
+      i++; continue;
+    }
+    if ((m = l.match(FENCE))) {
+      const fence = m[1], lang = m[2].trim(), buf = [];
+      i++;
+      while (i < L.length && !L[i].trim().startsWith(fence)) buf.push(L[i++]);
+      i++;
+      push("code", buf.join("\n"), { lang });
+      continue;
+    }
+    if ((m = l.match(LIST))) {
+      const type = /\d/.test(m[2]) ? "step" : "bullet";
+      const pad = m[1].length + m[2].length + Math.min(m[3].length, 4);
+      const buf = [m[4]];
+      let inFence = false;
+      i++;
+      while (i < L.length) {
+        const n = L[i];
+        if (inFence) { buf.push(dedent(n, pad)); if (/^\s*(```|~~~)/.test(n)) inFence = false; i++; continue; }
+        if (!n.trim()) {
+          let k = i + 1;
+          while (k < L.length && !L[k].trim()) k++;
+          if (k < L.length && indent(L[k]) >= 2) { buf.push(""); i++; continue; }
+          break;
+        }
+        if (indent(n) >= 2) { buf.push(dedent(n, pad)); if (/^\s*(```|~~~)/.test(n)) inFence = true; i++; continue; }
+        if (!startsBlock(n)) { buf.push(n.trim()); i++; continue; }
+        break;
+      }
+      while (buf.length && !buf[buf.length - 1].trim()) buf.pop();
+      push(type, buf.join("\n"));
+      continue;
+    }
+    if (TABLE.test(l)) {
+      const buf = [];
+      while (i < L.length && TABLE.test(L[i])) buf.push(L[i++].trim());
+      push("table", buf.join("\n"));
+      continue;
+    }
+    const buf = [];
+    while (i < L.length && L[i].trim() && !(buf.length && startsBlock(L[i]))) buf.push(L[i++]);
+    push("text", buf.join("\n"));
+  }
+  return { title, sections };
+}
+
+function parseSkill(src) {
+  src = src.replace(/\r\n?/g, "\n").replace(/^﻿/, "");
+  const { fm, extra, body } = parseFrontmatter(src);
+  const { title, sections } = parseBody(body);
+  return {
+    name: fm.name || "", description: fm.description || "", fmExtra: extra, title,
+    sections: sections.map(s => ({ ...s, x: 0, y: 0 })),
+    trigger: { x: 0, y: 0 }, view: { x: 40, y: 40, k: 1 },
+  };
+}
+
+/* ---------- Map back to SKILL.md ---------- */
+function yamlStr(s) {
+  s = String(s || "").replace(/\s*\n\s*/g, " ").trim();
+  if (!s || /^[\s'"`\[\]{}>|*&!%@#,?:-]/.test(s) || /: | #/.test(s) || /:$/.test(s)) return JSON.stringify(s);
+  return s;
+}
+function indentRest(text, pad) {
+  return text.split("\n").map((l, i) => (i === 0 || !l.trim() ? l : pad + l)).join("\n");
+}
+function itemsToMd(items) {
+  let out = "", prev = null, n = 0;
+  items.forEach(it => {
+    const t = (it.text || "").replace(/\s+$/, "");
+    if (it.type === "subheading") n = 0;
+    if (!t.trim() && it.type !== "code") return;
+    let chunk;
+    if (it.type === "step") { n++; const p = n + ". "; chunk = p + indentRest(t, " ".repeat(p.length)); }
+    else if (it.type === "bullet") chunk = "- " + indentRest(t, "  ");
+    else if (it.type === "code") chunk = "```" + (it.lang || "") + "\n" + t + "\n```";
+    else if (it.type === "subheading") chunk = "#".repeat(Math.max(3, it.level || 3)) + " " + t.replace(/\n/g, " ");
+    else chunk = t;
+    const tight = prev === it.type && (it.type === "step" || it.type === "bullet");
+    out += prev === null ? chunk : (tight ? "\n" : "\n\n") + chunk;
+    prev = it.type;
+  });
+  return out;
+}
+function bodyMd() {
+  const parts = [];
+  if (S.title.trim()) parts.push("# " + S.title.trim());
+  S.sections.forEach(s => {
+    const body = itemsToMd(s.items);
+    if (s.kind === "intro") { if (body) parts.push(body); }
+    else parts.push("## " + (s.heading.trim() || "Untitled") + (body ? "\n\n" + body : ""));
+  });
+  return parts.join("\n\n") + "\n";
+}
+function toMarkdown() {
+  const fm = ["---", "name: " + yamlStr(S.name), "description: " + yamlStr(S.description)];
+  if (S.fmExtra.trim()) fm.push(S.fmExtra.replace(/\s+$/, ""));
+  fm.push("---");
+  return fm.join("\n") + "\n\n" + bodyMd();
+}
+function safeName() {
+  return (S.name || "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "my-skill";
+}
+function installCmd() {
+  const dir = "~/.claude/skills/" + safeName();
+  return `mkdir -p ${dir} && cat > ${dir}/SKILL.md <<'SKILL_EOF'\n${toMarkdown()}SKILL_EOF\n`;
+}
+
+/* ---------- Checks ---------- */
+function lint() {
+  const out = [], add = (lvl, msg, where) => out.push({ lvl, msg, where });
+  const n = S.name.trim(), d = S.description.trim();
+  if (!n) add("bad", "name is missing.", "trigger");
+  else if (n.length > 64) add("bad", "name is longer than 64 characters.", "trigger");
+  else if (!/^[a-z0-9-]+$/.test(n)) add("bad", "name: use only lowercase letters, digits and hyphens.", "trigger");
+  else if (/^-|-$|--/.test(n)) add("bad", "name: no leading, trailing or double hyphens.", "trigger");
+  else add("ok", "name format is valid.", "trigger");
+  if (!d) add("bad", "description is missing.", "trigger");
+  else {
+    if (d.length > 1024) add("bad", `description is ${d.length} characters (max 1024).`, "trigger");
+    if (/\b(use (it |this( skill)? )?(when|for|if|whenever)|when the user|when you|triggers? (on|when))\b/i.test(d)) add("ok", "description says when to use it.", "trigger");
+    else add("warn", 'description does not say when to use it. Add "Use when …".', "trigger");
+    if (d.split(/\s+/).length < 10) add("warn", "description is short. Add words the user would actually say.", "trigger");
+  }
+  const keys = [...S.fmExtra.matchAll(/^([A-Za-z0-9_-]+):/gm)].map(m => m[1]);
+  keys.filter(k => k === "name" || k === "description").forEach(k => add("bad", `"${k}" also appears in Other frontmatter fields. Keep only one.`, "trigger"));
+  const other = keys.filter(k => !SPEC_FIELDS.includes(k) && k !== "name" && k !== "description");
+  if (other.length) add("tip", `Not in the open spec: ${other.join(", ")}. Fine if your agent supports them (Claude Code adds fields such as disable-model-invocation).`, "trigger");
+
+  const lines = bodyMd().split("\n").length;
+  if (lines > 500) add("warn", `Body is ${lines} lines. Keep it under 500 and move detail to references/.`);
+  S.sections.forEach(s => {
+    if (s.kind === "intro") return;
+    if (!s.heading.trim()) add("warn", "A section has no heading.", s.id);
+    if (!s.items.some(it => (it.text || "").trim())) add("warn", `Section "${s.heading || "Untitled"}" is empty.`, s.id);
+  });
+  if (!S.sections.some(s => s.items.some(it => it.type === "step"))) add("tip", "No numbered steps. Most skills work better with an ordered procedure.");
+  if (!S.sections.some(s => s.kind === "example")) add("tip", "No examples section. One concrete input and output helps a lot.");
+  const vague = bodyMd().match(/\b(be helpful|do good work|as needed|appropriately|best practices)\b/i);
+  if (vague) add("tip", `Vague phrase "${vague[0]}" costs tokens but gives no guidance.`);
+  return out;
+}
+
+/* ---------- State, history, storage ---------- */
+let S;
+let history = [], future = [], pendingSnap = null;
+const snap = () => JSON.stringify(S);
+function commit() { history.push(snap()); if (history.length > 150) history.shift(); future = []; }
+function restore(json) { const v = S.view; S = JSON.parse(json); S.view = v; render(); }
+function undo() { if (!history.length) return toast("Nothing to undo"); future.push(snap()); restore(history.pop()); }
+function redo() { if (!future.length) return; history.push(snap()); restore(future.pop()); }
+
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (_) {} }, 300);
+}
+function loadStored() {
+  try { const v = JSON.parse(localStorage.getItem(STORE_KEY)); if (v && Array.isArray(v.sections)) return v; } catch (_) {}
+  return null;
+}
+
+/* ---------- Canvas rendering ---------- */
+const viewport = $("viewport"), world = $("world"), edges = $("edges");
+const cardEl = id => world.querySelector(`.card[data-id="${id}"]`);
+
+function render() {
+  world.querySelectorAll(".card").forEach(c => c.remove());
+  world.append(triggerCard(), ...S.sections.map(sectionCard));
+  world.querySelectorAll("textarea").forEach(autosize);
+  applyView();
+  drawEdges();
+  refresh();
+  save();
+}
+
+function triggerCard() {
+  const card = h("div", { class: "card trigger", "data-id": "trigger", style: `left:${S.trigger.x}px;top:${S.trigger.y}px;--c:var(--ink)` });
+  const name = h("input", { class: "field mono", value: S.name, placeholder: "my-skill-name", spellcheck: "false", "aria-label": "Skill name" });
+  name.addEventListener("input", () => { S.name = name.value; changed(); });
+  const desc = h("textarea", { class: "field", rows: "3", placeholder: "What it does. Use when the user …", "aria-label": "Description" });
+  desc.value = S.description;
+  desc.addEventListener("input", () => { S.description = desc.value; autosize(desc); changed(); });
+  const extra = h("textarea", { class: "field mono", rows: "2", spellcheck: "false", placeholder: "license: MIT\nallowed-tools: Read Grep", "aria-label": "Other frontmatter fields" });
+  extra.value = S.fmExtra;
+  extra.addEventListener("input", () => { S.fmExtra = extra.value; autosize(extra); changed(); });
+  const det = h("details", {}, h("summary", { text: "Other frontmatter fields" }), extra);
+  if (S.fmExtra.trim()) det.open = true;
+  det.addEventListener("toggle", () => { autosize(extra); drawEdges(); });
+  card.append(
+    h("div", { class: "card-head" },
+      h("span", { class: "grip", text: "⠿" }), h("span", { class: "card-title", text: "Trigger" }),
+      h("span", { class: "warn-dot", text: "!" }), h("span", { class: "pill", text: "always loaded" })),
+    h("div", { class: "hint", text: "The agent sees only these two fields until the skill is used. The description decides when the rest loads." }),
+    h("div", { class: "body" },
+      h("div", { class: "flabel" }, h("span", { text: "name" }), h("span", { class: "count", id: "name-count" })),
+      name,
+      h("div", { class: "flabel" }, h("span", { text: "description" }), h("span", { class: "count", id: "desc-count" })),
+      desc,
+      h("ul", { class: "checks", id: "trigger-checks" }),
+      det,
+      h("div", { class: "files", id: "files" }))
+  );
+  return card;
+}
+
+function sectionCard(s, i) {
+  const k = KINDS[s.kind] || KINDS.notes;
+  const card = h("div", { class: "card", "data-id": s.id, style: `left:${s.x}px;top:${s.y}px;--c:${k.color}` });
+  const head = h("div", { class: "card-head" }, h("span", { class: "grip", text: "⠿" }));
+  if (s.kind === "intro") {
+    const t = h("input", { class: "heading", value: S.title, placeholder: "Skill title (H1)", "aria-label": "Title" });
+    t.addEventListener("input", () => { S.title = t.value; changed(); });
+    head.append(h("span", { class: "hash", text: "#" }), t, h("span", { class: "warn-dot", text: "!" }), h("span", { class: "pill", text: "start" }));
+  } else {
+    const hd = h("input", { class: "heading", value: s.heading, placeholder: "Section heading", "aria-label": "Section heading" });
+    hd.addEventListener("input", () => { s.heading = hd.value; changed(); });
+    const sel = h("select", { class: "kind", title: "Section type (sets the color and hint)", "aria-label": "Section type" });
+    Object.entries(KINDS).forEach(([key, v]) => key !== "intro" && sel.append(h("option", { value: key, text: v.label })));
+    sel.value = s.kind;
+    sel.addEventListener("change", () => { commit(); s.kind = sel.value; render(); });
+    head.sel = sel;
+    head.append(
+      h("span", { class: "order", text: String(i) }), h("span", { class: "hash", text: "##" }), hd,
+      h("span", { class: "warn-dot", text: "!" }),
+      h("button", { class: "icon", text: "◀", title: "Move earlier in the file", disabled: i <= 1, onclick: () => moveSection(i, -1) }),
+      h("button", { class: "icon", text: "▶", title: "Move later in the file", disabled: i >= S.sections.length - 1, onclick: () => moveSection(i, 1) }),
+      h("button", { class: "icon", text: "✕", title: "Delete section", onclick: () => deleteSection(i) }));
+  }
+  const items = h("div", { class: "items" });
+  let n = 0;
+  s.items.forEach(it => {
+    if (it.type === "subheading") n = 0;
+    if (it.type === "step") n++;
+    items.append(itemRow(s, it, it.type === "step" ? n : null));
+  });
+  if (!s.items.length) items.append(h("div", { class: "empty", text: "Empty. Add a block below, or drag one here." }));
+  setupDrop(items, s);
+  const add = h("div", { class: "add-row" },
+    ["step", "bullet", "text", "code", "table"].map(t => h("button", { class: "add", text: "+ " + t, onclick: () => addItem(s, t) })));
+  const hint = h("div", { class: "hint" });
+  if (s.kind !== "intro") hint.append(head.sel, " ");
+  hint.append(k.hint);
+  card.append(head, hint, items, add);
+  return card;
+}
+
+function itemRow(s, it, num) {
+  const row = h("div", { class: "item t-" + it.type, "data-id": it.id });
+  const grip = h("span", { class: "igrip", text: "⋮⋮", draggable: "true", title: "Drag to move" });
+  grip.addEventListener("dragstart", e => {
+    drag = { item: it.id, from: s.id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", it.id);
+    try { e.dataTransfer.setDragImage(row, 16, 14); } catch (_) {}
+    row.classList.add("dragging");
+  });
+  grip.addEventListener("dragend", () => { drag = null; row.classList.remove("dragging"); clearDrop(); });
+  const badge = h("button", { class: "badge", text: num != null ? num + "." : ITEM_BADGE[it.type], title: `${it.type}. Click to change type.` });
+  badge.onclick = () => {
+    commit();
+    it.type = ITEM_TYPES[(ITEM_TYPES.indexOf(it.type) + 1) % ITEM_TYPES.length];
+    if (it.type === "subheading") it.level = 3;
+    render();
+  };
+  const mono = it.type === "code" || it.type === "table";
+  const ta = h("textarea", { class: "itext" + (mono ? " mono" : ""), rows: "1", wrap: mono ? "off" : null, spellcheck: mono ? "false" : null,
+                             placeholder: ITEM_PLACEHOLDER[it.type], "aria-label": it.type });
+  ta.value = it.text;
+  ta.addEventListener("input", () => { it.text = ta.value; autosize(ta); changed(); });
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addItem(s, it.type === "subheading" ? "text" : it.type, it.id); }
+  });
+  const del = h("button", { class: "idel", text: "✕", title: "Delete block", onclick: () => { commit(); s.items = s.items.filter(x => x !== it); render(); } });
+  row.append(grip, badge, ta, del);
+  return row;
+}
+
+/* ---------- Edits ---------- */
+function addItem(s, type, afterId) {
+  commit();
+  const it = { id: uid(), type, text: "" };
+  const at = afterId ? s.items.findIndex(x => x.id === afterId) + 1 : s.items.length;
+  s.items.splice(at, 0, it);
+  render();
+  world.querySelector(`.item[data-id="${it.id}"] textarea`)?.focus();
+}
+function addSection(kind) {
+  commit();
+  const vw = viewport.clientWidth, vh = viewport.clientHeight, k = S.view.k;
+  const [type, text] = STARTER[kind];
+  const s = { id: uid(), kind, heading: KINDS[kind].label, items: [{ id: uid(), type, text }],
+              x: Math.round((vw / 2 - S.view.x) / k - 170), y: Math.round((vh / 3 - S.view.y) / k) };
+  S.sections.push(s);
+  render();
+  cardEl(s.id)?.querySelector(".heading")?.select();
+}
+function moveSection(i, dir) {
+  const j = i + dir;
+  if (j < 1 || j >= S.sections.length) return;
+  commit();
+  const a = S.sections[i], b = S.sections[j];
+  [a.x, b.x] = [b.x, a.x]; [a.y, b.y] = [b.y, a.y];
+  S.sections[i] = b; S.sections[j] = a;
+  render();
+}
+function deleteSection(i) {
+  commit();
+  const [s] = S.sections.splice(i, 1);
+  render();
+  toast(`Deleted "${s.heading || "Untitled"}"`, true);
+}
+
+let refreshTimer;
+function changed() {
+  requestAnimationFrame(drawEdges);
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, 120);
+  save();
+}
+
+/* Text edits become one undo step each: snapshot on focus, record on change. */
+world.addEventListener("focusin", e => { if (e.target.matches("input, textarea")) pendingSnap = snap(); });
+world.addEventListener("change", e => {
+  if (e.target.matches("input, textarea") && pendingSnap && pendingSnap !== snap()) {
+    history.push(pendingSnap); future = []; pendingSnap = snap();
+  }
+});
+
+/* ---------- Drag blocks between cards ---------- */
+let drag = null, dropAt = null;
+function clearDrop() {
+  world.querySelectorAll(".drop-before, .drop-after, .drop-end").forEach(el => el.classList.remove("drop-before", "drop-after", "drop-end"));
+}
+function setupDrop(el, s) {
+  el.addEventListener("dragover", e => {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    clearDrop();
+    const row = e.target.closest(".item");
+    if (row && row.dataset.id === drag.item) { dropAt = null; return; }
+    if (row) {
+      const r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+      row.classList.add(after ? "drop-after" : "drop-before");
+      dropAt = { sec: s.id, ref: row.dataset.id, after };
+    } else { el.classList.add("drop-end"); dropAt = { sec: s.id, ref: null }; }
+  });
+  el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) clearDrop(); });
+  el.addEventListener("drop", e => {
+    e.preventDefault();
+    if (!drag || !dropAt) return;
+    commit();
+    const from = S.sections.find(x => x.id === drag.from), to = S.sections.find(x => x.id === dropAt.sec);
+    const [it] = from.items.splice(from.items.findIndex(x => x.id === drag.item), 1);
+    let at = to.items.length;
+    if (dropAt.ref) { at = to.items.findIndex(x => x.id === dropAt.ref); if (dropAt.after) at++; }
+    to.items.splice(at, 0, it);
+    drag = dropAt = null;
+    render();
+  });
+}
+
+/* ---------- Pan, zoom, move cards ---------- */
+function applyView() {
+  const { x, y, k } = S.view;
+  world.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
+  viewport.style.backgroundPosition = `${x}px ${y}px`;
+  viewport.style.backgroundSize = `${22 * k}px ${22 * k}px`;
+  $("zoom").textContent = Math.round(k * 100) + "%";
+}
+function zoomAt(px, py, factor) {
+  const k = Math.min(2, Math.max(0.2, S.view.k * factor)), r = k / S.view.k;
+  S.view.x = px - (px - S.view.x) * r;
+  S.view.y = py - (py - S.view.y) * r;
+  S.view.k = k;
+  applyView(); save();
+}
+function zoomBy(f) { zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, f); }
+
+let z = 10;
+viewport.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const head = e.target.closest(".card-head");
+  // An unfocused heading also drags the card; a click without movement focuses it instead.
+  const headingClick = e.target.matches(".heading") && document.activeElement !== e.target ? e.target : null;
+  if (head && (headingClick || !e.target.closest("input, select, button, textarea"))) {
+    const card = head.parentElement, id = card.dataset.id;
+    const obj = id === "trigger" ? S.trigger : S.sections.find(s => s.id === id);
+    const before = snap(), sx = e.clientX, sy = e.clientY, ox = obj.x, oy = obj.y;
+    let moved = false;
+    card.style.zIndex = ++z;
+    card.classList.add("lifted");
+    head.setPointerCapture(e.pointerId);
+    const move = ev => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      obj.x = Math.round(ox + (ev.clientX - sx) / S.view.k);
+      obj.y = Math.round(oy + (ev.clientY - sy) / S.view.k);
+      moved = true;
+      card.style.left = obj.x + "px"; card.style.top = obj.y + "px";
+      drawEdges();
+    };
+    const up = () => {
+      head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up); head.removeEventListener("pointercancel", up);
+      card.classList.remove("lifted");
+      if (moved) { history.push(before); future = []; save(); }
+      else if (headingClick) headingClick.focus();
+    };
+    head.addEventListener("pointermove", move); head.addEventListener("pointerup", up); head.addEventListener("pointercancel", up);
+    e.preventDefault();
+  } else if (!e.target.closest(".card")) {
+    const sx = e.clientX, sy = e.clientY, ox = S.view.x, oy = S.view.y;
+    viewport.classList.add("panning");
+    viewport.setPointerCapture(e.pointerId);
+    const move = ev => { S.view.x = ox + ev.clientX - sx; S.view.y = oy + ev.clientY - sy; applyView(); };
+    const up = () => {
+      viewport.removeEventListener("pointermove", move); viewport.removeEventListener("pointerup", up); viewport.removeEventListener("pointercancel", up);
+      viewport.classList.remove("panning"); save();
+    };
+    viewport.addEventListener("pointermove", move); viewport.addEventListener("pointerup", up); viewport.addEventListener("pointercancel", up);
+  }
+});
+viewport.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = viewport.getBoundingClientRect();
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
+  else { S.view.x -= e.deltaX; S.view.y -= e.deltaY; applyView(); save(); }
+}, { passive: false });
+
+function bounds() {
+  const cards = [...world.querySelectorAll(".card")];
+  if (!cards.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  cards.forEach(c => {
+    x0 = Math.min(x0, c.offsetLeft); y0 = Math.min(y0, c.offsetTop);
+    x1 = Math.max(x1, c.offsetLeft + c.offsetWidth); y1 = Math.max(y1, c.offsetTop + c.offsetHeight);
+  });
+  return { x0, y0, w: x1 - x0, h: y1 - y0 };
+}
+function fit() {
+  const b = bounds();
+  if (!b) return;
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  // The pane can have no size yet on first load; fit again once it does.
+  if (vw < 100 || vh < 100) { needsFit = true; return; }
+  needsFit = false;
+  // A tall single column is fitted to width and scrolled, not shrunk to fit the height.
+  const tall = b.h > b.w * 2;
+  const k = Math.min(1, Math.max(0.2, tall ? (vw - 32) / b.w : Math.min((vw - 60) / b.w, (vh - 60) / b.h)));
+  S.view = { k, x: (vw - b.w * k) / 2 - b.x0 * k, y: Math.max(24, (vh - b.h * k) / 2) - b.y0 * k };
+  applyView(); save();
+}
+
+/* Snake layout: trigger on the left, sections in rows of two, alternating direction so arrows stay short. */
+function tidy() {
+  const W = 340, G = 80;
+  S.trigger = { x: 0, y: 0 };
+  let y = 0, rowMax = 0;
+  if (viewport.clientWidth < 700) {
+    // Narrow screens: one column, trigger on top.
+    y = (cardEl("trigger")?.offsetHeight || 300) + G;
+    S.sections.forEach(s => { s.x = 0; s.y = y; y += (cardEl(s.id)?.offsetHeight || 200) + G; });
+    return placeCards();
+  }
+  const COLS = 2;
+  S.sections.forEach((s, i) => {
+    const row = Math.floor(i / COLS), c = i % COLS;
+    if (c === 0 && i > 0) { y += rowMax + G; rowMax = 0; }
+    const col = row % 2 === 0 ? c : COLS - 1 - c;
+    s.x = (col + 1) * (W + G); s.y = y;
+    rowMax = Math.max(rowMax, cardEl(s.id)?.offsetHeight || 200);
+  });
+  placeCards();
+}
+function placeCards() {
+  [{ id: "trigger", ...S.trigger }, ...S.sections].forEach(o => {
+    const el = cardEl(o.id);
+    if (el) { el.style.left = o.x + "px"; el.style.top = o.y + "px"; }
+  });
+  drawEdges(); save();
+}
+
+function drawEdges() {
+  const ids = ["trigger", ...S.sections.map(s => s.id)];
+  const R = ids.map(id => { const el = cardEl(id); return el && { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; });
+  let html = `<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b5b5ae"/></marker>
+    <marker id="arr0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1d1d1f"/></marker></defs>`;
+  for (let i = 0; i < R.length - 1; i++) {
+    const a = R[i], b = R[i + 1];
+    if (!a || !b) continue;
+    const acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    const dx = bcx - acx, dy = bcy - acy;
+    let x1, y1, x2, y2, d;
+    const horizontal = Math.abs(dx) - (a.w + b.w) / 2 > Math.abs(dy) - (a.h + b.h) / 2;
+    if (horizontal) {
+      x1 = dx > 0 ? a.x + a.w : a.x; y1 = a.y + Math.min(60, a.h / 2);
+      x2 = dx > 0 ? b.x : b.x + b.w; y2 = b.y + Math.min(60, b.h / 2);
+      const c = Math.max(40, Math.abs(x2 - x1) / 2) * Math.sign(dx || 1);
+      d = `M${x1} ${y1} C${x1 + c} ${y1} ${x2 - c} ${y2} ${x2} ${y2}`;
+    } else {
+      x1 = acx; y1 = dy > 0 ? a.y + a.h : a.y;
+      x2 = bcx; y2 = dy > 0 ? b.y : b.y + b.h;
+      const c = Math.max(30, Math.abs(y2 - y1) / 2) * Math.sign(dy || 1);
+      d = `M${x1} ${y1} C${x1} ${y1 + c} ${x2} ${y2 - c} ${x2} ${y2}`;
+    }
+    html += `<path d="${d}" class="${i === 0 ? "first" : ""}" marker-end="url(#${i === 0 ? "arr0" : "arr"})"/>`;
+    if (i === 0) html += `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 10}" text-anchor="middle">on match</text>`;
+  }
+  edges.innerHTML = html;
+}
+
+/* ---------- Output panel and checks ---------- */
+function refresh() {
+  const md = toMarkdown(), checks = lint();
+  $("md").textContent = md;
+  $("stats").textContent = `· ${md.split("\n").length} lines · ~${Math.round(md.length / 4)} tokens`;
+  $("out-path").textContent = `~/.claude/skills/${safeName()}/SKILL.md`;
+  const li = c => h("li", { class: c.lvl, text: c.msg, "data-where": c.where || null, onclick: c.where ? () => focusCard(c.where) : null });
+  $("checks").replaceChildren(...checks.map(li));
+  $("trigger-checks")?.replaceChildren(...checks.filter(c => c.where === "trigger" && c.lvl !== "tip").map(li));
+  const nc = $("name-count"), dc = $("desc-count"), n = S.name.length, d = S.description.trim().length;
+  if (nc) { nc.textContent = `${n}/64`; nc.classList.toggle("over", n > 64); }
+  if (dc) { dc.textContent = `${d}/1024`; dc.classList.toggle("over", d > 1024); }
+  const files = [...new Set(S.sections.flatMap(s => s.items.map(it => it.text)).join("\n").match(/\b(?:scripts|references|assets)\/[\w.\/-]*\w/g) || [])];
+  const f = $("files");
+  if (f) f.replaceChildren(...(files.length ? [h("div", { text: "Files this skill points to (put them next to SKILL.md):", style: "margin-bottom:4px" }), ...files.map(x => h("code", { text: x }))] : []));
+  world.querySelectorAll(".card").forEach(c => {
+    const mine = checks.filter(x => x.where === c.dataset.id && (x.lvl === "bad" || x.lvl === "warn"));
+    c.classList.toggle("has-warn", mine.length > 0);
+    const dot = c.querySelector(".warn-dot");
+    if (dot) dot.title = mine.map(x => x.msg).join("\n");
+  });
+}
+function focusCard(id) {
+  const el = cardEl(id);
+  if (!el) return;
+  const k = S.view.k;
+  S.view.x = viewport.clientWidth / 2 - (el.offsetLeft + el.offsetWidth / 2) * k;
+  S.view.y = 60 - el.offsetTop * k;
+  applyView();
+  el.classList.add("lifted");
+  setTimeout(() => el.classList.remove("lifted"), 900);
+  el.querySelector("input, textarea")?.focus({ preventScroll: true });
+}
+function togglePanel() { $("panel").classList.toggle("hidden"); }
+
+function download() {
+  const a = h("a", { href: URL.createObjectURL(new Blob([toMarkdown()], { type: "text/markdown" })), download: "SKILL.md" });
+  document.body.append(a); a.click(); a.remove();
+  toast(`Downloaded SKILL.md. Put it in a folder named ${safeName()}/`);
+}
+async function copyText(text, msg) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (_) {
+    const t = h("textarea", { style: "position:fixed;opacity:0" }); t.value = text;
+    document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+  toast(msg);
+}
+
+let toastTimer;
+function toast(msg, withUndo) {
+  $("toast-msg").textContent = msg;
+  $("toast-undo").style.display = withUndo ? "" : "none";
+  $("toast").style.display = "flex";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ($("toast").style.display = "none"), 4000);
+}
+$("toast-undo").onclick = () => { $("toast").style.display = "none"; undo(); };
+
+/* ---------- Import ---------- */
+function loadSource(src, msg) {
+  if (S) commit();
+  S = parseSkill(src);
+  render(); tidy(); fit();
+  if (msg) toast(msg, history.length > 0);
+}
+function openImport() { $("imp-msg").textContent = ""; $("import").showModal(); }
+function importText() {
+  const t = $("imp-text").value;
+  if (!t.trim()) { $("imp-msg").textContent = "Paste a SKILL.md first."; return; }
+  $("import").close();
+  loadSource(t, "Built the map");
+}
+function toRawUrl(u) {
+  const m = u.trim().match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:blob|raw)\/([^?#]+)/);
+  return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}` : u.trim();
+}
+async function importUrl() {
+  const url = toRawUrl($("imp-url").value), msg = $("imp-msg");
+  if (!url) { msg.textContent = "Paste a URL first."; return; }
+  msg.textContent = "Loading…";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    $("imp-text").value = await res.text();
+    msg.textContent = "Loaded. Check it, then build the map.";
+  } catch (e) {
+    msg.textContent = `Could not fetch (${e.message}). The site may block this. Open the file, copy its text and paste it below.`;
+  }
+}
+
+/* ---------- Boot ---------- */
+const addSel = $("add-section");
+addSel.append(h("option", { value: "", text: "+ Add section" }),
+  ...Object.entries(KINDS).filter(([k]) => k !== "intro").map(([k, v]) => h("option", { value: k, text: v.label })));
+addSel.addEventListener("change", () => { if (addSel.value) addSection(addSel.value); addSel.value = ""; });
+
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea, select")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+});
+if (window.innerWidth <= 860) $("panel").classList.add("hidden");
+let needsFit = false;
+new ResizeObserver(() => { if (needsFit) fit(); }).observe(viewport);
+
+const stored = loadStored();
+if (stored) { S = stored; render(); }
+else loadSource(EXAMPLE);
+</script>
+</body>
+</html>
