@@ -157,6 +157,7 @@
   <button class="btn" onclick="openImport()">Import SKILL.md…</button>
   <button class="btn" onclick="loadSource(TEMPLATE, 'Started a blank skill')">New blank</button>
   <button class="btn hide-sm" onclick="loadSource(EXAMPLE, 'Loaded the example')">Example</button>
+  <button class="btn hide-sm" onclick="loadRemote('frontend-design')" title="Loads Anthropic's frontend-design skill from GitHub">Design skill</button>
   <select class="btn" id="add-section" aria-label="Add a section"></select>
   <button class="btn" onclick="tidy(); fit();" title="Arrange cards in reading order">Tidy up</button>
   <button class="btn" onclick="undo()" title="Undo (⌘/Ctrl+Z)">Undo</button>
@@ -1015,6 +1016,22 @@ async function importUrl() {
   }
 }
 
+/* Real skills that can be loaded by name: the "Design skill" button and canvas.html?skill=<name>. */
+const REMOTE = {
+  "frontend-design": "https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/SKILL.md",
+};
+async function loadRemote(name) {
+  if (!REMOTE[name]) return;
+  toast(`Loading ${name} from GitHub…`);
+  try {
+    const res = await fetch(REMOTE[name]);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    loadSource(await res.text(), `Loaded ${name}`);
+  } catch (e) {
+    toast(`Could not load ${name} (${e.message}). Use Import SKILL.md… and paste it instead.`);
+  }
+}
+
 /* ---------- Boot ---------- */
 const addSel = $("add-section");
 addSel.append(h("option", { value: "", text: "+ Add section" }),
@@ -1032,6 +1049,8 @@ new ResizeObserver(() => { if (needsFit) fit(); }).observe(viewport);
 const stored = loadStored();
 if (stored) { S = stored; render(); }
 else loadSource(EXAMPLE);
+// Loads on top of the saved map, so Undo brings the previous map back.
+loadRemote(new URLSearchParams(location.search).get("skill"));
 </script>
 </body>
 </html>
